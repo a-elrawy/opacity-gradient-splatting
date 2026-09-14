@@ -100,6 +100,11 @@ class OptimizationParams(ParamGroup):
         self.max_gaussians = 1_000_000
         self.use_error_densification = False
         self.error_densify_threshold = 0.0002
+        self.no_clone_opacity_correction = False
+        self.no_budget_pruning = False
+        # Default: densify from photometric opacity grads.
+        # Pass --densify_grad_from_total_loss to densify from photometric + depth grads.
+        self.densify_grad_from_total_loss = False
         super().__init__(parser, "Optimization Parameters")
 
 

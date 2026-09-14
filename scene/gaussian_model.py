@@ -456,16 +456,15 @@ class GaussianModel:
                                               torch.max(self.get_scaling,
                                                         dim=1).values <= self.percent_dense * scene_extent)
 
-        # Opacity bias correction
-        cloned_opacities = self.get_opacity[selected_pts_mask]
-        new_opacities_cloned = 1.0 - torch.sqrt(1.0 - cloned_opacities)
-        new_opacities_original = self.inverse_opacity_activation(new_opacities_cloned)
-
-        # Update original opacities
-        self._opacity.data[selected_pts_mask] = new_opacities_original
-
-        # Create new opacities for clones
-        new_opacities = self._opacity[selected_pts_mask]
+        if getattr(self.args, "no_clone_opacity_correction", False):
+            new_opacities = self._opacity[selected_pts_mask]
+        else:
+            # Opacity bias correction (Eq. opacity_correction)
+            cloned_opacities = self.get_opacity[selected_pts_mask]
+            new_opacities_cloned = 1.0 - torch.sqrt(1.0 - cloned_opacities)
+            new_opacities_original = self.inverse_opacity_activation(new_opacities_cloned)
+            self._opacity.data[selected_pts_mask] = new_opacities_original
+            new_opacities = self._opacity[selected_pts_mask]
 
 
         new_xyz = self._xyz[selected_pts_mask]
@@ -493,12 +492,13 @@ class GaussianModel:
         self.densify_and_split(metric, threshold, extent, iteration)
 
         # Enforce primitive budget
-        if self.get_xyz.shape[0] > max_gaussians:
-            num_prune = self.get_xyz.shape[0] - max_gaussians
-            opacities = self.get_opacity.squeeze()
-            prune_threshold = torch.kthvalue(opacities, num_prune).values
-            prune_mask = opacities < prune_threshold
-            self.prune_points(prune_mask, iteration)
+        if not getattr(self.args, "no_budget_pruning", False):
+            if self.get_xyz.shape[0] > max_gaussians:
+                num_prune = self.get_xyz.shape[0] - max_gaussians
+                opacities = self.get_opacity.squeeze()
+                prune_threshold = torch.kthvalue(opacities, num_prune).values
+                prune_mask = opacities < prune_threshold
+                self.prune_points(prune_mask, iteration)
 
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()

@@ -1,11 +1,49 @@
-*.pyc
-.vscode
-output*
-build
-diff_rasterization/diff_rast.egg-info
-diff_rasterization/dist
-.idea
-scripts
-fsgs-venv
-dataset
-fsgs_env
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Envs
+fsgs_env/
+fsgs-venv/
+.venv/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Data & run outputs
+dataset/
+output/
+output*/
+checkpoints/
+*.ply
+*.mp4
+*.gif
+
+# Submodules / build artifacts
+diff_rasterization/diff_rast.egg-info/
+diff_rasterization/dist/
+submodules/**/build/
+submodules/**/*.so
+
+# Local SLURM machine config (use env.sh.example)
+slurm/env.sh
+
+# Local-only directories
+paper/
+paper_old/
+paper_figures/
+submission/
+initial_tcvg_submission/
+comparison_resultsl23/
+*.warnings
+
+# Misc
+.DS_Store

@@ -92,11 +92,11 @@ def training(dataset, opt, pipe, args):
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
 
-        # Loss
+        # Photometric loss first; depth (if used) is training regularization only.
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 =  l1_loss_mask(image, gt_image)
-        loss = ((1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)))
-
+        photo_loss = ((1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)))
+        loss = photo_loss
 
         rendered_depth = render_pkg["depth"][0]
         midas_depth = torch.tensor(viewpoint_cam.depth_image).cuda()
@@ -107,7 +107,7 @@ def training(dataset, opt, pipe, args):
                         (1 - pearson_corrcoef( - midas_depth, rendered_depth)),
                         (1 - pearson_corrcoef(1 / (midas_depth + 200.), rendered_depth))
         )
-        loss += args.depth_weight * depth_loss
+        loss = loss + args.depth_weight * depth_loss
 
         if iteration > args.end_sample_pseudo:
             args.depth_weight = 0.001
@@ -129,8 +129,19 @@ def training(dataset, opt, pipe, args):
 
             if torch.isnan(depth_loss_pseudo).sum() == 0:
                 loss_scale = min((iteration - args.start_sample_pseudo) / 500., 1)
-                loss += loss_scale * args.depth_pseudo_weight * depth_loss_pseudo
+                loss = loss + loss_scale * args.depth_pseudo_weight * depth_loss_pseudo
 
+        # Opacity densification signal: photometric-only by default.
+        densify_opacity_grad = None
+        use_photo_densify = (
+            opt.use_error_densification
+            and iteration < opt.densify_until_iter
+            and not getattr(opt, "densify_grad_from_total_loss", False)
+        )
+        if use_photo_densify:
+            densify_opacity_grad = torch.autograd.grad(
+                photo_loss, gaussians._opacity, retain_graph=True, allow_unused=True
+            )[0]
 
         loss.backward()
         with torch.no_grad():
@@ -157,7 +168,9 @@ def training(dataset, opt, pipe, args):
 
             # Densification
             if  iteration < opt.densify_until_iter:
-                gaussians.update_densification_error(gaussians._opacity.grad)
+                opacity_grad_for_adc = densify_opacity_grad if densify_opacity_grad is not None else gaussians._opacity.grad
+                if opacity_grad_for_adc is not None:
+                    gaussians.update_densification_error(opacity_grad_for_adc)
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
